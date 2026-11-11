@@ -2,6 +2,16 @@
 
 All notable changes to MyGo Music are written down here. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.24] - 2026-11-11
+
+### Changed
+
+- Updated MyGo to v0.9.0.
+
+### Fixed
+
+- Windows releases now build on a native Windows runner.
+
 ## [0.1.23] - 2026-11-11
 
 ### Added
