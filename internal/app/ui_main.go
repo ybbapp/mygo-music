@@ -132,6 +132,9 @@ func (a *app) show(r route) {
 		lib = a.library
 	}
 	a.activate(lib)
+	if r != a.route {
+		a.selection = trackSelection{}
+	}
 	a.route = r
 	if r.page == pageSearch {
 		a.query, a.searched = r.query, r
@@ -229,6 +232,7 @@ func (a *app) sidebar(c *ui.Context) {
 			for _, n := range a.sidebarItems() {
 				a.navItem(c, n.icon, n.label, n.route)
 			}
+			a.downloadNav(c)
 			if a.searched.query != "" && a.searched.src == a.id {
 				a.navItem(c, iconSearch, T("Search Results"), a.searched)
 			}
@@ -372,6 +376,7 @@ func (a *app) pageTop(c *ui.Context) {
 			}
 		})
 	}
+	a.selectionControls(c)
 }
 
 func (a *app) content(c *ui.Context) {
@@ -385,6 +390,8 @@ func (a *app) content(c *ui.Context) {
 	switch a.route.page {
 	case pageHome:
 		a.homePage(c)
+	case pageDownloads:
+		a.downloadPage(c)
 	case pagePlaylist:
 		a.playlistPage(c)
 	case pageSearch:

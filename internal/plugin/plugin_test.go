@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"bufio"
+	"context"
 	"crypto/aes"
 	"encoding/hex"
 	"encoding/json"
@@ -149,7 +150,7 @@ func TestStuckPluginRestarts(t *testing.T) {
 export function album() { for (;;) {} }
 export function suggest() { return ["fine"]; }`)
 	err := p.callWithin(50*time.Millisecond, "album", map[string]string{"id": "1"}, nil)
-	if err == nil || !strings.Contains(err.Error(), "in time") {
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "in time") {
 		t.Fatalf("album: %v", err)
 	}
 	got, err := p.Suggest("a")

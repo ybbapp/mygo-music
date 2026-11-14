@@ -2,12 +2,14 @@ package player
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"mygo-music/internal/music"
 )
@@ -89,6 +91,9 @@ func (s *Song) SaveTo(path string) error {
 	return err
 }
 
+// songDownloadClient bounds stalled HTTP transfers, including reading the body.
+var songDownloadClient = &http.Client{Timeout: 15 * time.Minute}
+
 // copy writes all of the song to w.
 func (s *Song) copy(w io.Writer) error {
 	if s.file != nil {
@@ -103,7 +108,7 @@ func (s *Song) copy(w io.Writer) error {
 	for k, v := range s.st.Headers {
 		req.Header.Set(k, v)
 	}
-	res, err := music.HeadersStay(http.DefaultClient, req.URL.Hostname(), s.st.Headers).Do(req)
+	res, err := music.HeadersStay(songDownloadClient, req.URL.Hostname(), s.st.Headers).Do(req)
 	if err != nil {
 		return err
 	}
@@ -113,4 +118,63 @@ func (s *Song) copy(w io.Writer) error {
 	}
 	_, err = io.Copy(w, res.Body)
 	return err
+}
+
+// linkSong can be replaced in tests to exercise filesystems without hard links.
+var linkSong = os.Link
+
+// SaveUnique saves beside existing files without replacing any of them.
+func (s *Song) SaveUnique(dir, name string) error {
+	defer s.Close()
+	tmp, err := os.CreateTemp(dir, ".download-*.part")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	err = s.copy(tmp)
+	if e := tmp.Close(); err == nil {
+		err = e
+	}
+	if err != nil {
+		return err
+	}
+	ext := filepath.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	for n := 0; ; n++ {
+		candidate := name
+		if n > 0 {
+			candidate = fmt.Sprintf("%s (%d)%s", base, n, ext)
+		}
+		path := filepath.Join(dir, candidate)
+		err = linkSong(tmp.Name(), path)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err == nil {
+			return nil
+		}
+		// Some filesystems do not support hard links. Reserve the name without
+		// replacing another file, then copy the completed temporary file into it.
+		out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		in, err := os.Open(tmp.Name())
+		if err == nil {
+			_, err = io.Copy(out, in)
+			if e := in.Close(); err == nil {
+				err = e
+			}
+		}
+		if e := out.Close(); err == nil {
+			err = e
+		}
+		if err != nil {
+			os.Remove(path)
+		}
+		return err
+	}
 }

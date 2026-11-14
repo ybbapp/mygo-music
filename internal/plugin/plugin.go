@@ -21,6 +21,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -612,7 +613,7 @@ func (p *Plugin) callWithin(timeout time.Duration, method string, params, out an
 		return json.Unmarshal(a.json, out)
 	case <-timer.C:
 		p.dropIfStuck(v)
-		return fmt.Errorf("the plugin didn't answer %s in time", method)
+		return fmt.Errorf("the plugin didn't answer %s in time: %w", method, context.DeadlineExceeded)
 	}
 }
 
