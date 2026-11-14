@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -128,13 +130,13 @@ func TestDownloadQueueBound(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{}, 3)
 	fake(a).stream = func(id, quality string) (*music.Stream, error) {
-		if id == "block" {
+		if strings.HasPrefix(id, "block") {
 			started <- struct{}{}
 			<-release
 		}
 		return &music.Stream{URL: srv.URL, Type: "mp3"}, nil
 	}
-	tracks := []music.Track{song("block", "One"), song("block", "Two"), song("block", "Three")}
+	tracks := []music.Track{song("block1", "One"), song("block2", "Two"), song("block3", "Three")}
 	a.downloadPlaylist(music.Playlist{Tracks: tracks})
 	for range tracks {
 		wait(t, started, "download to start")
@@ -144,7 +146,7 @@ func TestDownloadQueueBound(t *testing.T) {
 		t.Fatalf("queue: %d batches, %d active", len(a.downloads.batches), a.downloads.active)
 	}
 	for i := 0; i < 6; i++ {
-		a.download(song("single", "Single"))
+		a.download(song(fmt.Sprintf("single%d", i), "Single"))
 	}
 	a.download(song("extra", "Extra"))
 	if len(a.downloads.batches) != 8 || a.toast != "Download queue is full" {
@@ -569,5 +571,116 @@ func TestDownloadCheckboxAndPlayback(t *testing.T) {
 	}
 	if !a.selection.chosen[1] {
 		t.Fatal("playing changed the selection")
+	}
+}
+
+// The same source and ID is queued only once, while identical IDs from different sources remain distinct.
+func TestDownloadDeduplicatesSourceAndID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("audio")) }))
+	defer srv.Close()
+	a := newTestApp()
+	ch := posts(a)
+	a.settings.DownloadFolder = t.TempDir()
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fake(a).stream = func(id, quality string) (*music.Stream, error) {
+		if id == "same" {
+			started <- struct{}{}
+			<-release
+		}
+		return &music.Stream{URL: srv.URL, Type: "mp3"}, nil
+	}
+	other := newFakeSource("other")
+	other.stream = func(string, string) (*music.Stream, error) { return &music.Stream{URL: srv.URL, Type: "mp3"}, nil }
+	addFake(a, other)
+	first := song("same", "First")
+	first.Source = "fake"
+	duplicate := song("same", "Repeated")
+	duplicate.Source = "fake"
+	differentSource := song("same", "Other")
+	differentSource.Source = "other"
+	anotherID := song("another", "First")
+	anotherID.Source = "fake"
+	noID := song("", "No ID")
+	noID.Source = "fake"
+	a.downloadPlaylist(music.Playlist{Tracks: []music.Track{first, duplicate, differentSource, anotherID, noID}})
+	wait(t, started, "first download")
+	if len(a.downloads.history) != 4 {
+		t.Fatalf("got %d tasks, want 4", len(a.downloads.history))
+	}
+	a.download(first)
+	if len(a.downloads.history) != 4 {
+		t.Fatal("a running task was added again")
+	}
+	close(release)
+	until(t, ch, func() bool { return len(a.downloads.batches) == 0 })
+	a.download(first)
+	if len(a.downloads.history) != 4 {
+		t.Fatal("a completed task was added again")
+	}
+	for _, name := range []string{"First.mp3", "First (1).mp3", "Other.mp3", "No ID.mp3"} {
+		if _, err := os.Stat(filepath.Join(a.settings.DownloadFolder, name)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// A failed song can be submitted again, and a duplicate never opens a save dialog.
+func TestDownloadDedupFailureAndSaveDialog(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("audio")) }))
+	defer srv.Close()
+	a := newTestApp()
+	ch := posts(a)
+	dir := t.TempDir()
+	tr := song("1", "First")
+	tr.Source = "fake"
+	a.downloads.history = []*downloadJob{{track: tr, state: "failed", err: music.ErrUnavailable}}
+	fake(a).stream = func(string, string) (*music.Stream, error) { return &music.Stream{URL: srv.URL, Type: "mp3"}, nil }
+	dialogs := make(chan struct{}, 2)
+	real := saveSongAs
+	saveSongAs = func(*app, string) string { dialogs <- struct{}{}; return filepath.Join(dir, "song.mp3") }
+	defer func() { saveSongAs = real }()
+	a.download(tr)
+	wait(t, dialogs, "save dialog")
+	until(t, ch, func() bool { return len(a.downloads.history) == 2 && a.downloads.history[1].state == "done" })
+	a.download(tr)
+	if len(a.downloads.history) != 2 {
+		t.Fatal("duplicate task was added")
+	}
+	select {
+	case <-dialogs:
+		t.Fatal("duplicate opened a save dialog")
+	default:
+	}
+}
+
+// When duplicate occurrences disagree about availability, the playable one is downloaded.
+func TestDownloadDedupPrefersAvailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("audio")) }))
+	defer srv.Close()
+	a := newTestApp()
+	ch := posts(a)
+	a.settings.DownloadFolder = t.TempDir()
+	fake(a).stream = func(string, string) (*music.Stream, error) { return &music.Stream{URL: srv.URL, Type: "mp3"}, nil }
+	unavailable := song("1", "Unavailable")
+	unavailable.Unavailable = true
+	available := song("1", "Available")
+	a.downloadPlaylist(music.Playlist{Tracks: []music.Track{unavailable, available}})
+	until(t, ch, func() bool { return len(a.downloads.batches) == 0 })
+	if len(a.downloads.history) != 1 || a.downloads.history[0].state != "done" || a.downloads.history[0].track.Name != "Available" {
+		t.Fatal("did not download the playable occurrence")
+	}
+}
+
+// Retrying an old failure does not start another copy of a song already completed.
+func TestDownloadRetryDeduplicates(t *testing.T) {
+	a := newTestApp()
+	tr := song("1", "First")
+	tr.Source = "fake"
+	failed := &downloadJob{track: tr, state: "failed", err: music.ErrUnavailable}
+	a.downloads.history = []*downloadJob{failed, {track: tr, state: "done"}}
+	a.retryDownload(failed)
+	if failed.state != "failed" || len(a.downloads.batches) != 0 || a.toast != "Skipped 1 duplicate downloads" {
+		t.Fatalf("state %s, batches %d, toast %q", failed.state, len(a.downloads.batches), a.toast)
 	}
 }

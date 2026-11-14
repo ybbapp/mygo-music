@@ -235,3 +235,59 @@ func TestDownloadRestoreSourceReturns(t *testing.T) {
 	}
 	a.flushDownloads()
 }
+
+// Restarting an older list resumes at most one pending task per source and ID.
+func TestDownloadRestoreDeduplicates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("audio")) }))
+	defer srv.Close()
+	root := t.TempDir()
+	path := filepath.Join(root, "downloads.json")
+	completed := song("1", "Complete")
+	completed.Source = "fake"
+	pending := song("2", "Pending")
+	pending.Source = "fake"
+	other := song("2", "Other")
+	other.Source = "other"
+	saved := []savedDownload{{Track: completed, Dir: root, State: "queued"}, {Track: completed, Dir: root, State: "done"}, {Track: pending, Dir: root, State: "downloading"}, {Track: pending, Dir: root, State: "queued"}, {Track: other, Dir: root, State: "queued"}}
+	if err := writeDownloads(path, saved); err != nil {
+		t.Fatal(err)
+	}
+	a := newTestApp()
+	ch := posts(a)
+	var fakeCalls, otherCalls atomic.Int32
+	fake(a).stream = func(id, quality string) (*music.Stream, error) {
+		fakeCalls.Add(1)
+		return &music.Stream{URL: srv.URL, Type: "mp3"}, nil
+	}
+	src := newFakeSource("other")
+	src.stream = func(id, quality string) (*music.Stream, error) {
+		otherCalls.Add(1)
+		return &music.Stream{URL: srv.URL, Type: "mp3"}, nil
+	}
+	addFake(a, src)
+	a.startDownloadStore(path)
+	until(t, ch, func() bool { return a.downloads.loaded && len(a.downloads.batches) == 0 })
+	if fakeCalls.Load() != 1 || otherCalls.Load() != 1 || len(a.downloads.history) != 3 {
+		t.Fatalf("fake calls %d, other calls %d, history %d", fakeCalls.Load(), otherCalls.Load(), len(a.downloads.history))
+	}
+	a.flushDownloads()
+}
+
+// A request made while the saved list loads waits until restored IDs are known.
+func TestDownloadWaitsForSavedList(t *testing.T) {
+	a := newTestApp()
+	tr := song("1", "First")
+	a.downloads.store = &downloadStore{}
+	a.download(tr)
+	if len(a.downloads.deferred) != 1 || len(a.downloads.history) != 0 {
+		t.Fatal("download started before the saved list was read")
+	}
+	a.downloads.store = nil
+	a.downloads.loaded = true
+	tr.Source = "fake"
+	a.restoreDownloads([]savedDownload{{Track: tr, State: "done"}})
+	a.runDeferredDownloads()
+	if len(a.downloads.history) != 1 || len(a.downloads.deferred) != 0 || a.toast != "Skipped 1 duplicate downloads" {
+		t.Fatalf("history %d, deferred %d, toast %q", len(a.downloads.history), len(a.downloads.deferred), a.toast)
+	}
+}
