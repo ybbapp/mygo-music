@@ -219,3 +219,32 @@ func TestNowPlayingRadioFrames(t *testing.T) {
 		}
 	}
 }
+
+// With MM_FRAMES set, saves the download list.
+func TestDownloadListFrame(t *testing.T) {
+	dir := framesDir(t)
+	a := newTestApp()
+	a.route = route{page: pageDownloads, src: "fake"}
+	a.downloads.history = []*downloadJob{
+		{track: song("1", "Northern Lights", "The Polar Lights"), state: "downloading"},
+		{track: song("2", "Slow Tide", "The Polar Lights"), state: "done"},
+		{track: song("3", "A Long Way North", "The Polar Lights"), state: "timeout"},
+		{track: song("4", "Quiet Hours", "The Polar Lights"), state: "failed"},
+	}
+	tt := ui.NewTester(a.view, 1180, 780)
+	settled(tt)
+	saveFrame(t, dir, "downloads.png", tt.Image())
+}
+
+// With MM_FRAMES set, saves a playlist while songs are selected.
+func TestDownloadSelectionFrame(t *testing.T) {
+	dir := framesDir(t)
+	a := newTestApp()
+	tracks := framesTracks(a)
+	a.playlists["10"] = &music.Playlist{ID: "10", Name: "Evening Walks", Tracks: tracks}
+	a.route = route{page: pagePlaylist, src: "fake", id: "10"}
+	a.selection = trackSelection{active: true, route: a.route, tracks: tracks, chosen: map[int]bool{0: true, 2: true}}
+	tt := ui.NewTester(a.view, 1180, 780)
+	settled(tt)
+	saveFrame(t, dir, "download-selection.png", tt.Image())
+}

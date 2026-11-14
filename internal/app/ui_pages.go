@@ -79,7 +79,7 @@ func (a *app) homePage(c *ui.Context) {
 			ui.Box(c).PaddingX(12).Children(func() { a.section(c, T("Recently Played")).Margin(0, 0, 8, 0) })
 			recent := lib.recent[:min(len(lib.recent), 8)]
 			for i := range recent {
-				a.trackRow(c, recent, i, true, "")
+				a.trackRow(c, recent, i, true, "", false)
 			}
 		}
 		lists := append(append([]music.Playlist(nil), lib.mine...), lib.saved...)
@@ -293,6 +293,22 @@ func (a *app) playlistHeader(c *ui.Context, pl *music.Playlist) {
 			}
 			ui.Row(c).Gap(10).Margin(10, 0, 0, 0).Children(func() {
 				a.playButtons(c, pl.Tracks)
+				count := len(a.selection.chosen)
+				selecting := a.selection.active && a.selection.route == a.route && sameList(a.selection.tracks, pl.Tracks) && count > 0
+				whole := a.library != nil && a.library.id != local.ID && a.library.can("stream") && a.library.src.Info().Playback == music.PlaybackStream
+				if whole || selecting {
+					label := T("Download Playlist")
+					if selecting {
+						label = Tf("Download Selected (%d)", count)
+					}
+					if pillButton(c.Key("download-playlist"), iconPlus, label, p.hover.Over(p.bg), p.text).Clicked() {
+						if selecting {
+							a.downloadTracks(a.selectedTracks(pl.Tracks))
+						} else {
+							a.downloadPlaylist(*pl)
+						}
+					}
+				}
 				if a.savable(pl) {
 					icon, label := iconPlus, TC("Save", "library")
 					if a.isSaved(pl) {
@@ -431,9 +447,20 @@ func (a *app) freshenLiked(lib *library) {
 	}()
 }
 
+// trackSelection is a temporary selection of positions in one unchanged list.
+type trackSelection struct {
+	active bool
+	route  route
+	tracks []music.Track
+	chosen map[int]bool
+}
+
 // trackRows lists tracks under a header, which scrolls with them; a click
 // plays the list from the track clicked.
 func (a *app) trackRows(c *ui.Context, tracks []music.Track, covers bool, header func(c *ui.Context), footer ...func(c *ui.Context)) {
+	if a.selection.active && (a.selection.route != a.route || !sameList(a.selection.tracks, tracks)) {
+		a.selection = trackSelection{}
+	}
 	// A song's menu can take it out of the playlist it is listed in.
 	var pid string
 	if a.route.page == pagePlaylist {
@@ -459,8 +486,54 @@ func (a *app) trackRows(c *ui.Context, tracks []music.Track, covers bool, header
 			footer[i-len(tracks)-1](c)
 			return
 		}
-		a.trackRow(c, tracks, i-1, covers, pid)
+		a.trackRow(c, tracks, i-1, covers, pid, true)
 	}).Grow(1).Padding(top+pageGap, pagePad-12, bottom+32, pagePad-12).ScrollbarInsets(top, 0, bottom, 0)
+}
+
+// selectionControls floats in the top bar, so choosing songs does not move the list.
+func (a *app) selectionControls(c *ui.Context) {
+	if !a.selection.active {
+		return
+	}
+	tracks := a.selection.tracks
+	p := a.pal
+	ui.Row(c.Key("selection-controls")).Absolute().Top(0).Right(20).Height(topBar(c)).Gap(6).AlignItems(ui.Center).Children(func() {
+		if selectionAction(c.Key("select-all"), T("Select All"), p).Clicked() {
+			for i := range tracks {
+				a.selection.chosen[i] = true
+			}
+		}
+		if a.route.page != pagePlaylist {
+			count := len(a.selection.chosen)
+			if selectionAction(c.Key("download-selected"), Tf("Download Selected (%d)", count), p).Disabled(count == 0).Clicked() {
+				a.downloadTracks(a.selectedTracks(tracks))
+			}
+		}
+		if selectionAction(c.Key("cancel-select"), T("Cancel"), p).Clicked() {
+			a.selection = trackSelection{}
+		}
+	})
+}
+
+// selectionAction is a quiet, compact action in the page's top bar.
+func selectionAction(c *ui.Context, label string, p palette) ui.Element {
+	b := ui.ButtonBase(c).Height(26).PaddingX(10).Radius(999).AlignItems(ui.Center).Label(label)
+	if b.Hovered() {
+		b.Background(p.hover)
+	}
+	b.Children(func() { ui.Text(c, label).FontSize(12.5).FontWeight(500).TextColor(p.muted).SingleLine() })
+	return b
+}
+
+// selectedTracks keeps playlist order, including unavailable songs for the queue to report.
+func (a *app) selectedTracks(tracks []music.Track) []music.Track {
+	selected := make([]music.Track, 0, len(a.selection.chosen))
+	for i := range tracks {
+		if a.selection.chosen[i] {
+			selected = append(selected, tracks[i])
+		}
+	}
+	return selected
 }
 
 // sameTrack reports whether two tracks are one: IDs are their source's.
@@ -470,18 +543,21 @@ func sameTrack(x, y *music.Track) bool {
 
 // trackRow is a row of the list tracks, its track i, which plays the list from
 // there as it's clicked.
-func (a *app) trackRow(c *ui.Context, tracks []music.Track, i int, covers bool, pid string) {
+func (a *app) trackRow(c *ui.Context, tracks []music.Track, i int, covers bool, pid string, selectable bool) {
 	p := a.pal
 	tr := &tracks[i]
 	w, _ := c.Size()
 	// An album's page has no column of the album its songs are on.
 	wide := w-sidebarWidth > 820 && a.route.page != pageAlbum
 	playing := sameTrack(a.pl.Current(), tr)
-	row := ui.ButtonBase(c.Key(tr.ID)).Height(54).PaddingX(12).Gap(14).Radius(10).AlignItems(ui.Center).FocusRing(false).Label(tr.Name).
-		ContextMenu(a.songItems(tr, pid))
+	selecting := a.selection.active && a.selection.route == a.route && sameList(a.selection.tracks, tracks)
+	row := ui.ButtonBase(c.Key(tr.ID)).Height(54).PaddingX(12).Gap(14).Radius(10).AlignItems(ui.Center).FocusRing(false).Label(tr.Name).Selected(selecting && a.selection.chosen[i])
+	row.ContextMenu(a.songItems(tr, pid))
 	hovered := row.Hovered()
 	bg := ui.Transparent
 	switch {
+	case selecting && a.selection.chosen[i]:
+		bg = p.accent.Alpha(0.16)
 	case playing:
 		bg = p.accent.Alpha(0.09)
 	case hovered:
@@ -493,6 +569,37 @@ func (a *app) trackRow(c *ui.Context, tracks []music.Track, i int, covers bool, 
 	}
 	a.wantLike(tr)
 	row.Children(func() {
+		if selectable {
+			checked := selecting && a.selection.chosen[i]
+			check := ui.CheckboxBase(c.Key("select-track"), &checked).Size(20, 20).Center().Label(Tf("Select %s", tr.Name))
+			if !hovered && !checked && !check.Focused() {
+				check.Opacity(0)
+			}
+			check.Children(func() {
+				face := ui.Box(c).Size(15, 15).Radius(4).Border(1, p.faint).Center()
+				if checked {
+					face.Background(p.accent).Border(1, p.accent)
+				}
+				face.Children(func() {
+					if checked {
+						ui.Icon(c, iconCheck).Size(11, 11).TextColor(p.onAccent)
+					}
+				})
+			})
+			check.OnClick(func() {
+				if !a.selection.active || a.selection.route != a.route || !sameList(a.selection.tracks, tracks) {
+					a.selection = trackSelection{active: true, route: a.route, tracks: tracks, chosen: map[int]bool{}}
+				}
+				if checked {
+					a.selection.chosen[i] = true
+				} else {
+					delete(a.selection.chosen, i)
+				}
+				if len(a.selection.chosen) == 0 {
+					a.selection = trackSelection{}
+				}
+			})
+		}
 		ui.Box(c).Width(26).Center().Children(func() {
 			switch {
 			case playing:
@@ -532,6 +639,7 @@ func (a *app) trackRow(c *ui.Context, tracks []music.Track, i int, covers bool, 
 		})
 		ui.Text(c, clock(tr.Length())).FontSize(12.5).FontFeatures("tnum").TextColor(p.faint).Width(44).TextAlign(ui.End)
 	})
+
 	if row.Clicked() && !tr.Unavailable {
 		a.pl.PlayTrack(tracks, i)
 	}

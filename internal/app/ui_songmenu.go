@@ -40,7 +40,11 @@ func (a *app) songItems(tr *music.Track, pid string) func(m *ui.Menu) {
 		}
 		if a.canDownload(tr) {
 			m.Separator()
-			if m.Item(T("Download…")).Chosen() {
+			label := T("Download…")
+			if a.settings.DownloadFolder != "" {
+				label = T("Download")
+			}
+			if m.Item(label).Chosen() {
 				a.download(*tr)
 			}
 		}

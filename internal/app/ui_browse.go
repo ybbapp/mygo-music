@@ -212,7 +212,7 @@ func (a *app) browseRows(c *ui.Context, page *music.Browse, pageID string, heade
 		case rowTitle:
 			a.browseTitle(c, sec, r.section == 0)
 		case rowTrack:
-			a.trackRow(c, sec.Tracks, r.from, true, "")
+			a.trackRow(c, sec.Tracks, r.from, true, "", false)
 		case rowEmpty:
 			ui.Column(c).Margin(0, 12, cardRowGap, 12).Children(func() { a.empty(c, sec.Empty) })
 		default:

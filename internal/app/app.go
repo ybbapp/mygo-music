@@ -34,6 +34,7 @@ const (
 	pageSavedAlbums
 	pageBrowse
 	pageSection
+	pageDownloads
 )
 
 type route struct {
@@ -53,12 +54,13 @@ type route struct {
 // app is the state both windows show. Everything in it is read and changed
 // on the main thread: by the views, and by goroutines through post.
 type app struct {
-	win   *mygo.Window
-	notch *notch
-	tray  *mygo.Tray // the icon in the menu bar or notification area, while it shows
-	art   *artCache
-	pl    *player.Player
-	pal   palette
+	downloads downloadQueue
+	win       *mygo.Window
+	notch     *notch
+	tray      *mygo.Tray // the icon in the menu bar or notification area, while it shows
+	art       *artCache
+	pl        *player.Player
+	pal       palette
 
 	// libs are the sources, the built-in one first, and what the app has of
 	// each. The active one's is embedded: a.mine is what the active source
@@ -101,6 +103,7 @@ type app struct {
 	settingSaves   map[*library]<-chan struct{} // source save order, main thread only
 	settingPending map[string]*settingWrite     // last queued value per source/key
 
+	selection trackSelection
 	trackList ui.ListState
 	// Where the page and the sidebar are scrolled, kept while Now Playing
 	// covers them, unbuilt.
@@ -376,6 +379,7 @@ func Run() error {
 		})
 		a.setMenu()
 		a.boot()
+		a.startDownloadStore(userDataDir("downloads.json"))
 		// The notch player is macOS's, over its menu bar: elsewhere it would
 		// hang at the top of the screen as a black box.
 		if runtime.GOOS == "darwin" {
@@ -420,6 +424,7 @@ func Run() error {
 		a.settings.Volume = a.volume
 		a.settings.save()
 		a.saveSession()
+		a.flushDownloads()
 	})
 	// Windows leaves an icon in the notification area after its app until
 	// the pointer passes over it.

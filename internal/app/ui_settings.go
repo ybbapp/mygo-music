@@ -399,6 +399,28 @@ func (a *app) settingsSections(c *ui.Context, p palette) []settingsSection {
 	}
 
 	add("playback", T("Playback"), iconVolume, func(row settingsRow, block settingsBlock) {
+		row(T("Concurrent Downloads"), T("How many songs download at once"), func() {
+			labels := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+			at := s.DownloadConcurrency - 1
+			if at < 0 || at >= len(labels) {
+				at = 2
+			}
+			if i, ok := choice(c, "download-concurrency", T("Concurrent Downloads"), labels, at); ok {
+				s.DownloadConcurrency = i + 1
+				a.changed()
+				a.runDownloads()
+			}
+		})
+		row(T("Download Folder"), s.DownloadFolder, func() {
+			if ui.Button(c.Key("download-folder"), T("Choose Folder…")).Clicked() {
+				pickFolders(a, func(paths []string) {
+					if len(paths) > 0 {
+						s.DownloadFolder = paths[0]
+						a.changed()
+					}
+				})
+			}
+		})
 		row(T("Quality"), T("What's asked of plugins that have a choice, from the next song on"), func() {
 			labels := make([]string, len(qualityLevels))
 			at := 1

@@ -40,7 +40,9 @@ type settings struct {
 	NotchVirtual bool `json:"notchVirtual"`
 	// NotchGreeted says the notch showed itself, once, as the first song
 	// played (greet).
-	NotchGreeted bool `json:"notchGreeted"`
+	NotchGreeted        bool   `json:"notchGreeted"`
+	DownloadFolder      string `json:"downloadFolder,omitempty"`
+	DownloadConcurrency int    `json:"downloadConcurrency,omitempty"`
 	// Quality is what's asked of sources: standard, high or lossless. A source
 	// may ignore it.
 	Quality string `json:"quality"`
@@ -88,7 +90,7 @@ type settings struct {
 }
 
 func defaultSettings() settings {
-	return settings{Language: i18n.System, NotchActivity: true, Quality: "high", Appearance: "system", Volume: 0.8, Normalize: true, AppIcon: "dock-and-menubar", CacheMB: 2048}
+	return settings{DownloadConcurrency: 3, Language: i18n.System, NotchActivity: true, Quality: "high", Appearance: "system", Volume: 0.8, Normalize: true, AppIcon: "dock-and-menubar", CacheMB: 2048}
 }
 
 func settingsPath() (string, error) {

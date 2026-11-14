@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -158,9 +157,12 @@ func TestSongMenuDownloads(t *testing.T) {
 	if name := wait(t, suggested, "where to save it"); name != "AC_DC - Back in Black.mp3" {
 		t.Errorf("suggested %q", name)
 	}
-	until(t, ch, func() bool { return strings.HasPrefix(a.toast, "Downloaded") })
+	until(t, ch, func() bool { return len(a.downloads.history) == 1 && a.downloads.history[0].state == "done" })
 	if b, _ := os.ReadFile(filepath.Join(dir, "picked.mp3")); string(b) != "the song" {
 		t.Errorf("saved %q", b)
+	}
+	if len(a.downloads.history) != 1 || a.downloads.history[0].state != "done" {
+		t.Error("the saved song was not recorded in downloads")
 	}
 }
 
