@@ -2,6 +2,17 @@
 
 All notable changes to MyGo Music are written down here. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.25] - 2026-11-15
+
+### Added
+
+- Downloads can be selected from song lists, queued with configurable concurrency, retried after failures, and resumed after restarting the app.
+- The download list shows each song's status and avoids adding the same source song twice.
+
+### Fixed
+
+- Downloads keep existing files intact, including on filesystems without hard-link support.
+
 ## [0.1.24] - 2026-11-11
 
 ### Changed
@@ -241,6 +252,8 @@ All notable changes to MyGo Music are written down here. Versions follow [Semant
 
 The first release: a native music player that plays your local files and gets everything else from plugins.
 
+[0.1.25]: https://github.com/egoist/mygo-music/compare/v0.1.24...v0.1.25
+[0.1.24]: https://github.com/egoist/mygo-music/compare/v0.1.23...v0.1.24
 [0.1.22]: https://github.com/egoist/mygo-music/compare/v0.1.21...v0.1.22
 [0.1.21]: https://github.com/egoist/mygo-music/compare/v0.1.20...v0.1.21
 [0.1.20]: https://github.com/egoist/mygo-music/compare/v0.1.19...v0.1.20

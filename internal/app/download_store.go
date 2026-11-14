@@ -47,6 +47,7 @@ func (a *app) startDownloadStore(path string) {
 				a.post(func() {
 					if a.downloads.store == store {
 						a.downloads.store = nil
+						a.runDeferredDownloads()
 						a.toast = T("Couldn't load the download list")
 					}
 				})
@@ -57,6 +58,7 @@ func (a *app) startDownloadStore(path string) {
 			a.post(func() {
 				if a.downloads.store == store {
 					a.downloads.store = nil
+					a.runDeferredDownloads()
 					a.toast = T("Couldn't load the download list")
 				}
 			})
@@ -66,10 +68,20 @@ func (a *app) startDownloadStore(path string) {
 		a.post(func() {
 			a.downloads.loaded = true
 			a.restoreDownloads(saved)
+			a.runDeferredDownloads()
 			a.saveDownloads()
 			a.runDownloads()
 		})
 	}()
+}
+
+// runDeferredDownloads admits requests made while the saved list was loading.
+func (a *app) runDeferredDownloads() {
+	deferred := a.downloads.deferred
+	a.downloads.deferred = nil
+	for _, start := range deferred {
+		start()
+	}
 }
 
 // run serializes writes away from the UI thread and keeps the last complete file.
@@ -175,7 +187,27 @@ var errDownloadNeedsLocation = errors.New("download needs a save location")
 func (a *app) restoreDownloads(saved []savedDownload) {
 	restored := make([]*downloadJob, 0, len(saved))
 	pending := make([]*downloadJob, 0)
+	// Older lists could contain the same song more than once. A completed
+	// copy takes precedence, then the first interrupted task is resumed.
+	seen := make(map[downloadIdentity]bool, len(saved))
 	for _, item := range saved {
+		if item.State == "done" && item.Track.Source != "" && item.Track.ID != "" {
+			seen[downloadIdentity{item.Track.Source, item.Track.ID}] = true
+		}
+	}
+	skipped := 0
+	for _, item := range saved {
+		if (item.State == "queued" || item.State == "downloading") && item.Track.Source != "" && item.Track.ID != "" {
+			key := downloadIdentity{item.Track.Source, item.Track.ID}
+			if seen[key] {
+				skipped++
+				continue
+			}
+			// Keep a later usable copy when this one cannot run.
+			if (item.Dir != "" || item.Path != "") && a.canDownload(&item.Track) {
+				seen[key] = true
+			}
+		}
 		job := &downloadJob{track: item.Track, dir: item.Dir, path: item.Path, quality: item.Quality, state: item.State, attempts: item.Attempts}
 		if a.canDownload(&job.track) {
 			job.lib = a.downloadLib(&job.track)
@@ -222,6 +254,7 @@ func (a *app) restoreDownloads(saved []savedDownload) {
 		restored = append(restored, job)
 	}
 	a.downloads.history = append(restored, a.downloads.history...)
+	a.duplicateDownloads(skipped)
 	if len(pending) > 0 {
 		if len(a.downloads.batches) >= 8 {
 			last := a.downloads.batches[len(a.downloads.batches)-1]

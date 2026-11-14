@@ -55,11 +55,22 @@ func (a *app) downloadLib(tr *music.Track) *library {
 // download saves a copy of tr where the listener picks, at the quality the
 // settings say, from the cache if it's kept there.
 func (a *app) download(tr music.Track) {
+	if a.downloads.store != nil && !a.downloads.loaded {
+		if tr.Source == "" && a.library != nil {
+			tr.Source = a.library.id
+		}
+		a.downloads.deferred = append(a.downloads.deferred, func() { a.download(tr) })
+		return
+	}
 	if a.settings.DownloadFolder != "" {
 		a.enqueueDownloads(a.downloadJobs([]music.Track{tr}), a.settings.DownloadFolder)
 		return
 	}
 	job := a.downloadJobs([]music.Track{tr})[0]
+	if _, skipped := a.uniqueDownloads([]*downloadJob{job}); skipped > 0 {
+		a.duplicateDownloads(skipped)
+		return
+	}
 	job.quality = a.settings.Quality
 	a.downloads.history = append(a.downloads.history, job)
 	a.prepareSingle(job)
@@ -152,11 +163,12 @@ func songFileName(tr *music.Track, ext string) string {
 
 // downloadQueue bounds concurrent saves and keeps this session’s tasks.
 type downloadQueue struct {
-	batches []*downloadBatch
-	active  int
-	history []*downloadJob
-	store   *downloadStore
-	loaded  bool
+	batches  []*downloadBatch
+	active   int
+	history  []*downloadJob
+	deferred []func()
+	store    *downloadStore
+	loaded   bool
 }
 type downloadBatch struct {
 	jobs       []*downloadJob
@@ -189,12 +201,56 @@ func (a *app) downloadJobs(tracks []music.Track) []*downloadJob {
 	return jobs
 }
 
+// downloadIdentity is source-scoped: different providers may use the same ID.
+type downloadIdentity struct{ source, id string }
+
+// uniqueDownloads skips tasks already waiting, running or completed, and repeats in the request.
+func (a *app) uniqueDownloads(jobs []*downloadJob) ([]*downloadJob, int) {
+	seen := make(map[downloadIdentity]bool, len(a.downloads.history)+len(jobs))
+	for _, old := range a.downloads.history {
+		if old.track.ID != "" && old.track.Source != "" && (old.state == "queued" || old.state == "downloading" || old.state == "done") {
+			seen[downloadIdentity{old.track.Source, old.track.ID}] = true
+		}
+	}
+	unique := make([]*downloadJob, 0, len(jobs))
+	positions := make(map[downloadIdentity]int, len(jobs))
+	skipped := 0
+	for _, job := range jobs {
+		key := downloadIdentity{job.track.Source, job.track.ID}
+		if key.source != "" && key.id != "" {
+			if seen[key] {
+				skipped++
+				continue
+			}
+			if at, ok := positions[key]; ok {
+				// A source may mark one occurrence unavailable but supply a playable one later.
+				if unique[at].lib == nil && job.lib != nil {
+					unique[at] = job
+				}
+				skipped++
+				continue
+			}
+			positions[key] = len(unique)
+		}
+		unique = append(unique, job)
+	}
+	return unique, skipped
+}
+
+func (a *app) duplicateDownloads(n int) {
+	if n > 0 {
+		a.toast = Tf("Skipped %d duplicate downloads", n)
+	}
+}
+
 func (a *app) enqueueDownloads(jobs []*downloadJob, dir string) {
-	if len(a.downloads.batches) >= 8 {
-		a.toast = T("Download queue is full")
+	jobs, skipped := a.uniqueDownloads(jobs)
+	a.duplicateDownloads(skipped)
+	if len(jobs) == 0 {
 		return
 	}
-	if len(jobs) == 0 {
+	if len(a.downloads.batches) >= 8 {
+		a.toast = T("Download queue is full")
 		return
 	}
 	for _, job := range jobs {
@@ -217,6 +273,19 @@ func (a *app) downloadPlaylist(pl music.Playlist) {
 // downloadTracks queues exactly the tracks chosen, asking for a folder if needed.
 func (a *app) downloadTracks(tracks []music.Track) {
 	jobs := a.downloadJobs(tracks)
+	if a.downloads.store != nil && !a.downloads.loaded {
+		a.downloads.deferred = append(a.downloads.deferred, func() { a.submitDownloadJobs(jobs) })
+		return
+	}
+	a.submitDownloadJobs(jobs)
+}
+
+func (a *app) submitDownloadJobs(jobs []*downloadJob) {
+	jobs, skipped := a.uniqueDownloads(jobs)
+	a.duplicateDownloads(skipped)
+	if len(jobs) == 0 {
+		return
+	}
 	start := func(dir string) { a.enqueueDownloads(jobs, dir) }
 	if a.settings.DownloadFolder != "" {
 		start(a.settings.DownloadFolder)
@@ -321,6 +390,10 @@ func downloadTimedOut(err error) bool {
 
 func (a *app) retryDownload(job *downloadJob) {
 	if job.state != "failed" && job.state != "timeout" {
+		return
+	}
+	if _, skipped := a.uniqueDownloads([]*downloadJob{job}); skipped > 0 {
+		a.duplicateDownloads(skipped)
 		return
 	}
 	job.lib = nil

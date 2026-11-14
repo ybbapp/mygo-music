@@ -107,7 +107,7 @@ func (a *app) downloadPage(c *ui.Context) {
 				case "downloading":
 					status = "Downloading…"
 				case "done":
-					status = "Completed"
+					status = "Downloaded"
 				case "failed":
 					switch {
 					case errors.Is(job.err, music.ErrUnavailable), errors.Is(job.err, music.ErrUnsupported):
