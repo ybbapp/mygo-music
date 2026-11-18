@@ -36,12 +36,12 @@ var saveSongAs = func(a *app, name string) string {
 }
 
 // canDownload reports whether tr can be saved to a file of the listener's: a
-// song its source streams for the app to play, rather than one already on disk
-// or one that plays elsewhere.
+// song its source can hand over as audio, rather than one already on disk.
+// A source that plays elsewhere may still stream for this, as Spotify does
+// through librespot, so where it plays isn't what decides.
 func (a *app) canDownload(tr *music.Track) bool {
 	lib := a.downloadLib(tr)
-	return lib != nil && lib.id != local.ID && lib.can("stream") &&
-		lib.src.Info().Playback == music.PlaybackStream && !tr.Unavailable
+	return lib != nil && lib.id != local.ID && lib.can("stream") && !tr.Unavailable
 }
 
 // downloadLib resolves an explicitly named source without falling back to another.
