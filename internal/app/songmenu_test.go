@@ -166,8 +166,28 @@ func TestSongMenuDownloads(t *testing.T) {
 	}
 }
 
-// A song that plays elsewhere, in its source's own app, offers no download.
+// A song its source can't hand over as audio offers no download, wherever the
+// source plays.
 func TestSongMenuDownloadsOnlyWhatStreams(t *testing.T) {
+	a := newTestApp()
+	without(a, "stream")
+	a.playlists["42"] = &music.Playlist{ID: "42", Name: "飙升榜", Tracks: []music.Track{song("1", "宝船", "DOUDOU")}}
+	a.route = route{page: pagePlaylist, src: "fake", id: "42"}
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	if err := tt.RightClick("宝船"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("Download…"); err == nil {
+		t.Error("offered to download a song the source can't stream")
+	}
+	tt.CloseMenu()
+}
+
+// A source that plays elsewhere, as Spotify does through librespot, still
+// offers the download when it can stream the audio for it.
+func TestSongMenuDownloadsWhatPlaysElsewhereButStreams(t *testing.T) {
 	a := newTestApp()
 	fake(a).info.Playback = music.PlaybackRemote
 	a.playlists["42"] = &music.Playlist{ID: "42", Name: "飙升榜", Tracks: []music.Track{song("1", "宝船", "DOUDOU")}}
@@ -178,8 +198,7 @@ func TestSongMenuDownloadsOnlyWhatStreams(t *testing.T) {
 	if err := tt.RightClick("宝船"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.ChooseMenuItem("Download…"); err == nil {
-		t.Error("offered to download a song that plays elsewhere")
+	if err := tt.ChooseMenuItem("Download…"); err != nil {
+		t.Errorf("no download offered for a source that streams: %v; the menu shows %q", err, tt.Menu())
 	}
-	tt.CloseMenu()
 }
