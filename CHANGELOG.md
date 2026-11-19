@@ -2,6 +2,12 @@
 
 All notable changes to MyGo Music are written down here. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.27] - 2026-11-19
+
+### Changed
+
+- Updates now come from this repository's releases, signed with the app's own update key.
+
 ## [0.1.26] - 2026-11-19
 
 ### Fixed
@@ -258,6 +264,7 @@ All notable changes to MyGo Music are written down here. Versions follow [Semant
 
 The first release: a native music player that plays your local files and gets everything else from plugins.
 
+[0.1.27]: https://github.com/ybbapp/mygo-music/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/egoist/mygo-music/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/egoist/mygo-music/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/egoist/mygo-music/compare/v0.1.23...v0.1.24

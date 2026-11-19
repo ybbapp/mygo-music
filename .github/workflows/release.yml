@@ -116,6 +116,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
+          if [ -z "$MACOS_CERTIFICATE" ]; then
+            echo "No macOS certificate set; the app will be ad-hoc signed and not notarized."
+            exit 0
+          fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
           password="$(openssl rand -base64 24)"
           security create-keychain -p "$password" "$keychain"
@@ -134,4 +138,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
-        run: go tool mygo build -platform "${{ matrix.platform }}" -upload
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        run: |
+          args=(-platform "${{ matrix.platform }}" -upload)
+          if [ "${{ matrix.name }}" = "macOS" ] && [ -z "$MACOS_CERTIFICATE" ]; then
+            args+=(-sign - -skip-notarize)
+          fi
+          go tool mygo build "${args[@]}"
