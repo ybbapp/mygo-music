@@ -58,6 +58,20 @@ func TestDownloadPlaylist(t *testing.T) {
 	}
 }
 
+// A playlist from a source that plays elsewhere but streams still offers its download.
+func TestDownloadPlaylistThatPlaysElsewhereButStreams(t *testing.T) {
+	a := newTestApp()
+	fake(a).info.Playback = music.PlaybackRemote
+	a.playlists["42"] = &music.Playlist{ID: "42", Tracks: []music.Track{song("1", "First", "Artist")}}
+	a.route = route{page: pagePlaylist, src: "fake", id: "42"}
+	tt := ui.NewTester(a.view, 1200, 800)
+	tt.Frame()
+
+	if _, ok := tt.Find("Download Playlist"); !ok {
+		t.Fatal("no playlist download offered for a source that streams")
+	}
+}
+
 // A configured folder sends a song menu download to the queue without a save dialog.
 func TestSongDownloadUsesQueue(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("audio")) }))

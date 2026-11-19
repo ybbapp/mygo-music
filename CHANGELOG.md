@@ -2,6 +2,12 @@
 
 All notable changes to MyGo Music are written down here. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.26] - 2026-11-19
+
+### Fixed
+
+- A source that plays elsewhere but can still stream its audio, as Spotify does through librespot, now offers downloads for both songs and playlists.
+
 ## [0.1.25] - 2026-11-15
 
 ### Added
@@ -252,6 +258,7 @@ All notable changes to MyGo Music are written down here. Versions follow [Semant
 
 The first release: a native music player that plays your local files and gets everything else from plugins.
 
+[0.1.26]: https://github.com/egoist/mygo-music/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/egoist/mygo-music/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/egoist/mygo-music/compare/v0.1.23...v0.1.24
 [0.1.22]: https://github.com/egoist/mygo-music/compare/v0.1.21...v0.1.22

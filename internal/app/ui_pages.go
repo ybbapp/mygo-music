@@ -295,7 +295,7 @@ func (a *app) playlistHeader(c *ui.Context, pl *music.Playlist) {
 				a.playButtons(c, pl.Tracks)
 				count := len(a.selection.chosen)
 				selecting := a.selection.active && a.selection.route == a.route && sameList(a.selection.tracks, pl.Tracks) && count > 0
-				whole := a.library != nil && a.library.id != local.ID && a.library.can("stream") && a.library.src.Info().Playback == music.PlaybackStream
+				whole := a.library != nil && a.library.id != local.ID && a.library.can("stream")
 				if whole || selecting {
 					label := T("Download Playlist")
 					if selecting {
