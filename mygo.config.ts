@@ -5,12 +5,12 @@ export default ({ command }: { command: string }) => ({
   name: "MyGo Music",
   identifier: "dev.egoist.music",
   slug: "mygo-music",
-  version: "0.1.26",
+  version: "0.1.27",
   out: "build",
   urlSchemes: [command === "dev" ? "mygo-music-dev" : "mygo-music"],
   updates: {
-    publicKey: "WzJsOGNIuf6mcEqo5ff8jub+NoQQOEk4JXreLPYjgyQ=",
-    github: "egoist/mygo-music",
+    publicKey: "W6O/NacmffsciGuoPH44hGjUvPxPixveboAx7aLnxhI=",
+    github: "ybbapp/mygo-music",
   },
   macos: {
     icon: "icon/AppIcon.icon",
