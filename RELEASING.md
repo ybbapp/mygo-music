@@ -2,6 +2,27 @@
 
 Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml). Installed apps update to a release once it's published.
 
+## Local releases
+
+This fork can publish from a Mac without GitHub Actions. Commit the version
+and changelog, tag the commit, and push both:
+
+```bash
+git push origin main v0.1.28
+scripts/release.sh
+```
+
+The script reads the version from `mygo.config.ts`, runs the tests, builds
+macOS, Windows and Linux, uploads the signed update archives and manifests,
+and publishes the draft release. It reads the update key from
+`MYGO_UPDATER_PRIVATE_KEY`, or from
+`~/Library/Application Support/mygo/update-keys/mygo-update.key`.
+
+Without an Apple certificate, it signs macOS ad hoc and skips notarization:
+the first install may need Finder's Open. Builds before 0.1.27 point at the
+upstream repository, so they need one manual install of a newer release
+before later updates arrive automatically.
+
 ## Cut a release
 
 1. Make sure `main` is clean and the tests pass:
